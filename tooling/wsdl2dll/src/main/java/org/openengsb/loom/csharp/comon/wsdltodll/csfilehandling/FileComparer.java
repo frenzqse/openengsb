@@ -38,8 +38,13 @@ import org.apache.maven.plugin.logging.Log;
 // To be compatible with wsdl.exe (windows) the interface names are converted to I+"NAME"+SoapBinding
 
 public class FileComparer {
+    private static final String EXCEPTION = "EXCEPTION";
+    private static final String CLASS = "CLASS";
+    private static final String EXTEND_IMPLEMENT_SYMBOL_CSHARP = ":";
+    private static final String OPENING_BRACKET = "{";
     private static final String ABSTRACT_CLASS_SIGNITURE = "abstract partial class";
     private static final String CSHARP_CLASS_NAME = "class";
+    private static final String EXCEPTION_PARENT_CLASSNAME = "Exception";
     private File csFile1;
     private File csFile2;
     private Boolean windows;
@@ -85,6 +90,8 @@ public class FileComparer {
             linescs2 = replaceAbstractClasses(linescs2);
             logging.info("Save files");
         }
+        linescs1 = findExceptionClassesAndExtendWithException(linescs1);
+        linescs2 = findExceptionClassesAndExtendWithException(linescs2);
         replaceFilesWithNewContent(linescs1, csFile1);
         replaceFilesWithNewContent(linescs2, csFile2);
     }
@@ -103,13 +110,44 @@ public class FileComparer {
         return result;
     }
 
+    /**
+     * Searches for exception classes and extend them with Exception (.Net type)
+     * 
+     * @param lines
+     * @return
+     */
+    public List<String> findExceptionClassesAndExtendWithException(List<String> lines) {
+        List<String> result = new LinkedList<String>();
+        for (int i = 0; i < lines.size(); i++) {
+            result.add(ifExceptionClassThenExtendWithException(lines.get(i)));
+        }
+        return result;
+    }
+
+    /**
+     * Checks if a line is an exception class line
+     * 
+     * @param line
+     * @return if the class is a Exception class, then the line with Exception else the line without modification
+     */
+    private String ifExceptionClassThenExtendWithException(String line) {
+        String result = line;
+           
+        if (isExceptionLine(line)) {
+            logging.info("Found exception Class. Extending with Exception");
+            result = result.replace(OPENING_BRACKET, "");
+            result += EXTEND_IMPLEMENT_SYMBOL_CSHARP + " " + EXCEPTION_PARENT_CLASSNAME + " " + OPENING_BRACKET;
+        }
+        return result;
+    }
+
     private String removeAbstract(String line) {
         String tmpLine = line;
         if (isAbstractClassLine(tmpLine)) {
             logging.info("Found abstract class. Convert it to a interface");
             tmpLine = tmpLine.replace(ABSTRACT_CLASS_SIGNITURE + " ", "interface I");
-            if (tmpLine.contains(":")) {
-                tmpLine = tmpLine.substring(0, tmpLine.indexOf(":")) + "{";
+            if (tmpLine.contains(EXTEND_IMPLEMENT_SYMBOL_CSHARP)) {
+                tmpLine = tmpLine.substring(0, tmpLine.indexOf(EXTEND_IMPLEMENT_SYMBOL_CSHARP)) + OPENING_BRACKET;
             }
             tmpLine = tmpLine.replace(" {", "SoapBinding {");
         } else {
@@ -122,6 +160,11 @@ public class FileComparer {
             }
         }
         return tmpLine;
+    }
+
+    private boolean isExceptionLine(String line) {
+        String upperLine = line.toUpperCase();
+        return upperLine.contains(CLASS) && upperLine.contains(EXCEPTION);
     }
 
     private boolean isAbstractClassLine(String line) {
@@ -148,7 +191,7 @@ public class FileComparer {
             if (!ignoreLine) {
                 result.add(lines.get(i));
             } else {
-                if (lines.get(i).contains("{")) {
+                if (lines.get(i).contains(OPENING_BRACKET)) {
                     openingBracket++;
                 }
                 if (lines.get(i).contains("}")) {
@@ -166,8 +209,8 @@ public class FileComparer {
 
     private boolean containsLineClassname(String line, String classname) {
         String classline = line;
-        if (line.contains(":")) {
-            classline = line.substring(0, line.indexOf(":"));
+        if (line.contains(EXTEND_IMPLEMENT_SYMBOL_CSHARP)) {
+            classline = line.substring(0, line.indexOf(EXTEND_IMPLEMENT_SYMBOL_CSHARP));
         }
         String patternString = "\\b(" + classname + ")\\b";
         Pattern pattern = Pattern.compile(patternString);
@@ -186,7 +229,7 @@ public class FileComparer {
             }
             if (addAttributesToDelete) {
                 tmpLineIndexToDelete.add(i);
-                if (lines.get(i).contains("{")
+                if (lines.get(i).contains(OPENING_BRACKET)
                         || (lines.get(i) != "" && !lines.get(i).contains("["))) {
                     addAttributesToDelete = false;
                     tmpLineIndexToDelete = new LinkedList<Integer>();
@@ -255,11 +298,11 @@ public class FileComparer {
     private String getClassName(String line) {
         String result = line.substring(line.indexOf(CSHARP_CLASS_NAME)
                 + CSHARP_CLASS_NAME.length());
-        if (result.contains("{")) {
-            result = result.substring(0, result.indexOf("{"));
+        if (result.contains(OPENING_BRACKET)) {
+            result = result.substring(0, result.indexOf(OPENING_BRACKET));
         }
-        if (result.contains(":")) {
-            result = result.substring(0, result.indexOf(":"));
+        if (result.contains(EXTEND_IMPLEMENT_SYMBOL_CSHARP)) {
+            result = result.substring(0, result.indexOf(EXTEND_IMPLEMENT_SYMBOL_CSHARP));
         }
         return result.replaceAll("\\s", "");
     }
@@ -271,7 +314,7 @@ public class FileComparer {
      * @return
      */
     private boolean isCSharpClass(String line) {
-        return line.contains("class") && line.contains("{");
+        return line.contains("class") && line.contains(OPENING_BRACKET);
     }
 
     /**
